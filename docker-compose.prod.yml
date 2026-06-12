@@ -1,0 +1,48 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: groupchat-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: groupchat
+      POSTGRES_USER: groupchat
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-groupchat_password}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U groupchat -d groupchat"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    image: 801534266905.dkr.ecr.us-east-1.amazonaws.com/kabw-groupchat/backend:latest
+    container_name: groupchat-backend
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://groupchat:${POSTGRES_PASSWORD:-groupchat_password}@postgres:5432/groupchat
+      JWT_SECRET: ${JWT_SECRET:-change_this_secret}
+      JWT_EXPIRY: ${JWT_EXPIRY:-86400}
+      SALT_ROUNDS: ${SALT_ROUNDS:-10}
+      APP_ORIGIN: ${APP_ORIGIN:?Set APP_ORIGIN to the public frontend origin, for example http://YOUR_EC2_PUBLIC_IP:3000}
+    ports:
+      - "8081:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: ["sh", "-c", "bun --bun run prisma migrate deploy && bun server.ts"]
+
+  frontend:
+    image: 801534266905.dkr.ecr.us-east-1.amazonaws.com/kabw-groupchat/frontend:latest
+    container_name: groupchat-frontend
+    restart: unless-stopped
+    environment:
+      VITE_API_BASE_URL: ${VITE_API_BASE_URL:?Set VITE_API_BASE_URL to the public backend API URL, for example http://YOUR_EC2_PUBLIC_IP:8081/api}
+      VITE_SOCKET_URL: ${VITE_SOCKET_URL:?Set VITE_SOCKET_URL to the public backend socket URL, for example http://YOUR_EC2_PUBLIC_IP:8081}
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:
